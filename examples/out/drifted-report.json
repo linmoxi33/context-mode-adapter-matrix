@@ -1,0 +1,469 @@
+{
+  "tool": "context-mode-adapter-matrix",
+  "version": "1.0.0",
+  "root": "/home/ubuntu/GitHub/work/trending/context-mode-adapter-matrix/examples/in/upstream",
+  "summary": {
+    "platforms": 5,
+    "surfaces": 6,
+    "checks": 18,
+    "errors": 18,
+    "warnings": 0,
+    "dynamic_probes": true
+  },
+  "matrix": [
+    {
+      "platform": "claude-code",
+      "canonical": "present",
+      "mirror": "present",
+      "namer": "present",
+      "configs": "present",
+      "client_map": "present",
+      "override": "present"
+    },
+    {
+      "platform": "cursor",
+      "canonical": "present",
+      "mirror": "present",
+      "namer": "present",
+      "configs": "present",
+      "client_map": "present",
+      "override": "present"
+    },
+    {
+      "platform": "vscode-copilot",
+      "canonical": "present",
+      "mirror": "present",
+      "namer": "present",
+      "configs": "present",
+      "client_map": "present",
+      "override": "present"
+    },
+    {
+      "platform": "omp",
+      "canonical": "present",
+      "mirror": "missing",
+      "namer": "silent-fallback",
+      "configs": "present",
+      "client_map": "present",
+      "override": "missing"
+    },
+    {
+      "platform": "pi",
+      "canonical": "present",
+      "mirror": "present",
+      "namer": "present",
+      "configs": "present",
+      "client_map": "present",
+      "override": "present"
+    }
+  ],
+  "checks": [
+    {
+      "id": "canonical-table",
+      "severity": "info",
+      "title": "canonical platform table parsed",
+      "findings": []
+    },
+    {
+      "id": "canonical-env-collision",
+      "severity": "warning",
+      "title": "one env var claimed by multiple canonical platforms",
+      "findings": []
+    },
+    {
+      "id": "mirror-missing-platform",
+      "severity": "error",
+      "title": "platform detected server-side but absent from the hook mirror",
+      "findings": [
+        {
+          "platform": "omp",
+          "surface": "mirror",
+          "message": "canonical platform has 1 detection env var(s) but no mirror row",
+          "file": "hooks/core/platform-detect.mjs",
+          "line": 24
+        }
+      ]
+    },
+    {
+      "id": "mirror-extra-platform",
+      "severity": "error",
+      "title": "mirror invents a platform the canonical table does not know",
+      "findings": []
+    },
+    {
+      "id": "mirror-missing-env-var",
+      "severity": "error",
+      "title": "mirror omits env vars the canonical table detects on",
+      "findings": [
+        {
+          "platform": "claude-code",
+          "surface": "mirror",
+          "message": "mirror lacks canonical detection var CLAUDE_CODE_ENTRYPOINT",
+          "file": "hooks/core/platform-detect.mjs",
+          "line": 5
+        },
+        {
+          "platform": "cursor",
+          "surface": "mirror",
+          "message": "mirror lacks canonical detection var CURSOR_CWD",
+          "file": "hooks/core/platform-detect.mjs",
+          "line": 6
+        },
+        {
+          "platform": "vscode-copilot",
+          "surface": "mirror",
+          "message": "mirror lacks canonical detection var VSCODE_CWD",
+          "file": "hooks/core/platform-detect.mjs",
+          "line": 7
+        },
+        {
+          "platform": "pi",
+          "surface": "mirror",
+          "message": "mirror lacks canonical detection var PI_CONFIG_DIR",
+          "file": "hooks/core/platform-detect.mjs",
+          "line": 8
+        }
+      ]
+    },
+    {
+      "id": "mirror-extra-env-var",
+      "severity": "error",
+      "title": "mirror detects on env vars canonical does not",
+      "findings": [
+        {
+          "platform": "cursor",
+          "surface": "mirror",
+          "message": "mirror uses CURSOR_CLI, not a canonical detection var",
+          "file": "hooks/core/platform-detect.mjs",
+          "line": 6
+        },
+        {
+          "platform": "pi",
+          "surface": "mirror",
+          "message": "mirror uses PI_PROJECT_DIR, which canonical marks detect:false",
+          "file": "hooks/core/platform-detect.mjs",
+          "line": 8
+        }
+      ]
+    },
+    {
+      "id": "mirror-order-drift",
+      "severity": "warning",
+      "title": "mirror row order diverges from canonical precedence order",
+      "findings": []
+    },
+    {
+      "id": "namer-missing-platform",
+      "severity": "error",
+      "title": "canonical platform has no tool-name prefix (silent claude-code fallback)",
+      "findings": [
+        {
+          "platform": "omp",
+          "surface": "namer",
+          "message": "no TOOL_PREFIXES entry; getToolName() returns the claude-code name",
+          "file": "hooks/core/tool-naming.mjs",
+          "line": 19
+        }
+      ]
+    },
+    {
+      "id": "namer-extra-platform",
+      "severity": "warning",
+      "title": "tool namer knows a platform outside the canonical table",
+      "findings": []
+    },
+    {
+      "id": "config-missing",
+      "severity": "error",
+      "title": "canonical platform ships no configs/<platform> payload",
+      "findings": []
+    },
+    {
+      "id": "config-orphan",
+      "severity": "error",
+      "title": "configs/<platform> exists for a platform nothing else knows",
+      "findings": []
+    },
+    {
+      "id": "clientmap-unknown-platform",
+      "severity": "error",
+      "title": "clientInfo mapping points at an unknown platform",
+      "findings": []
+    },
+    {
+      "id": "clientmap-missing-platform",
+      "severity": "warning",
+      "title": "canonical platform has no clientInfo.name mapping",
+      "findings": []
+    },
+    {
+      "id": "override-list-missing",
+      "severity": "error",
+      "title": "CONTEXT_MODE_PLATFORM allow-list omits a canonical platform",
+      "findings": [
+        {
+          "platform": "omp",
+          "surface": "override",
+          "message": "cannot be forced with CONTEXT_MODE_PLATFORM",
+          "file": "src/adapters/detect.ts",
+          "line": null
+        }
+      ]
+    },
+    {
+      "id": "namer-silent-fallback",
+      "severity": "error",
+      "title": "tool name silently falls back to the claude-code convention",
+      "findings": [
+        {
+          "platform": "omp",
+          "surface": "namer",
+          "message": "getToolName(\"omp\") returns the claude-code name (mcp__plugin_context-mode_context-mode__ctx_search)",
+          "file": "hooks/core/tool-naming.mjs",
+          "line": 44
+        }
+      ]
+    },
+    {
+      "id": "detect-single-var-divergence",
+      "severity": "error",
+      "title": "hook resolves a canonical env var to a different platform",
+      "findings": [
+        {
+          "platform": "cursor",
+          "surface": "mirror",
+          "message": "env {CURSOR_CWD=1} resolves to \"claude-code\" (no-arg: \"claude-code\") but canonical resolves to \"cursor\"",
+          "file": "hooks/core/platform-detect.mjs",
+          "line": 41
+        },
+        {
+          "platform": "vscode-copilot",
+          "surface": "mirror",
+          "message": "env {VSCODE_CWD=1} resolves to \"claude-code\" (no-arg: \"claude-code\") but canonical resolves to \"vscode-copilot\"",
+          "file": "hooks/core/platform-detect.mjs",
+          "line": 41
+        },
+        {
+          "platform": "omp",
+          "surface": "mirror",
+          "message": "env {PI_CODING_AGENT_DIR=1} resolves to \"claude-code\" (no-arg: \"claude-code\") but canonical resolves to \"omp\"",
+          "file": "hooks/core/platform-detect.mjs",
+          "line": 41
+        },
+        {
+          "platform": "pi",
+          "surface": "mirror",
+          "message": "env {PI_CONFIG_DIR=1} resolves to \"claude-code\" (no-arg: \"claude-code\") but canonical resolves to \"pi\"",
+          "file": "hooks/core/platform-detect.mjs",
+          "line": 41
+        }
+      ]
+    },
+    {
+      "id": "detect-collision-divergence",
+      "severity": "error",
+      "title": "two canonical env vars collide differently on the hook side",
+      "findings": [
+        {
+          "platform": "cursor",
+          "surface": "mirror",
+          "message": "with {CURSOR_CWD=1, VSCODE_CWD=1} canonical resolves to \"cursor\" but the hook resolves to \"claude-code\"",
+          "file": "hooks/core/platform-detect.mjs",
+          "line": 41
+        },
+        {
+          "platform": "vscode-copilot",
+          "surface": "mirror",
+          "message": "with {VSCODE_CWD=1, PI_CODING_AGENT_DIR=1} canonical resolves to \"vscode-copilot\" but the hook resolves to \"claude-code\"",
+          "file": "hooks/core/platform-detect.mjs",
+          "line": 41
+        },
+        {
+          "platform": "omp",
+          "surface": "mirror",
+          "message": "with {PI_CODING_AGENT_DIR=1, PI_CONFIG_DIR=1} canonical resolves to \"omp\" but the hook resolves to \"claude-code\"",
+          "file": "hooks/core/platform-detect.mjs",
+          "line": 41
+        }
+      ]
+    },
+    {
+      "id": "test-enshrines-fallback",
+      "severity": "error",
+      "title": "test suite asserts the silent fallback instead of blocking it",
+      "findings": [
+        {
+          "platform": null,
+          "surface": "tests",
+          "message": "test asserts the fallback: tests/hooks/tool-naming.test.ts",
+          "file": "tests/hooks/tool-naming.test.ts",
+          "line": null
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "platform": "omp",
+      "surface": "mirror",
+      "message": "canonical platform has 1 detection env var(s) but no mirror row",
+      "file": "hooks/core/platform-detect.mjs",
+      "line": 24,
+      "check": "mirror-missing-platform",
+      "severity": "error"
+    },
+    {
+      "platform": "claude-code",
+      "surface": "mirror",
+      "message": "mirror lacks canonical detection var CLAUDE_CODE_ENTRYPOINT",
+      "file": "hooks/core/platform-detect.mjs",
+      "line": 5,
+      "check": "mirror-missing-env-var",
+      "severity": "error"
+    },
+    {
+      "platform": "cursor",
+      "surface": "mirror",
+      "message": "mirror lacks canonical detection var CURSOR_CWD",
+      "file": "hooks/core/platform-detect.mjs",
+      "line": 6,
+      "check": "mirror-missing-env-var",
+      "severity": "error"
+    },
+    {
+      "platform": "vscode-copilot",
+      "surface": "mirror",
+      "message": "mirror lacks canonical detection var VSCODE_CWD",
+      "file": "hooks/core/platform-detect.mjs",
+      "line": 7,
+      "check": "mirror-missing-env-var",
+      "severity": "error"
+    },
+    {
+      "platform": "pi",
+      "surface": "mirror",
+      "message": "mirror lacks canonical detection var PI_CONFIG_DIR",
+      "file": "hooks/core/platform-detect.mjs",
+      "line": 8,
+      "check": "mirror-missing-env-var",
+      "severity": "error"
+    },
+    {
+      "platform": "cursor",
+      "surface": "mirror",
+      "message": "mirror uses CURSOR_CLI, not a canonical detection var",
+      "file": "hooks/core/platform-detect.mjs",
+      "line": 6,
+      "check": "mirror-extra-env-var",
+      "severity": "error"
+    },
+    {
+      "platform": "pi",
+      "surface": "mirror",
+      "message": "mirror uses PI_PROJECT_DIR, which canonical marks detect:false",
+      "file": "hooks/core/platform-detect.mjs",
+      "line": 8,
+      "check": "mirror-extra-env-var",
+      "severity": "error"
+    },
+    {
+      "platform": "omp",
+      "surface": "namer",
+      "message": "no TOOL_PREFIXES entry; getToolName() returns the claude-code name",
+      "file": "hooks/core/tool-naming.mjs",
+      "line": 19,
+      "check": "namer-missing-platform",
+      "severity": "error"
+    },
+    {
+      "platform": "omp",
+      "surface": "override",
+      "message": "cannot be forced with CONTEXT_MODE_PLATFORM",
+      "file": "src/adapters/detect.ts",
+      "line": null,
+      "check": "override-list-missing",
+      "severity": "error"
+    },
+    {
+      "platform": "omp",
+      "surface": "namer",
+      "message": "getToolName(\"omp\") returns the claude-code name (mcp__plugin_context-mode_context-mode__ctx_search)",
+      "file": "hooks/core/tool-naming.mjs",
+      "line": 44,
+      "check": "namer-silent-fallback",
+      "severity": "error"
+    },
+    {
+      "platform": "cursor",
+      "surface": "mirror",
+      "message": "env {CURSOR_CWD=1} resolves to \"claude-code\" (no-arg: \"claude-code\") but canonical resolves to \"cursor\"",
+      "file": "hooks/core/platform-detect.mjs",
+      "line": 41,
+      "check": "detect-single-var-divergence",
+      "severity": "error"
+    },
+    {
+      "platform": "vscode-copilot",
+      "surface": "mirror",
+      "message": "env {VSCODE_CWD=1} resolves to \"claude-code\" (no-arg: \"claude-code\") but canonical resolves to \"vscode-copilot\"",
+      "file": "hooks/core/platform-detect.mjs",
+      "line": 41,
+      "check": "detect-single-var-divergence",
+      "severity": "error"
+    },
+    {
+      "platform": "omp",
+      "surface": "mirror",
+      "message": "env {PI_CODING_AGENT_DIR=1} resolves to \"claude-code\" (no-arg: \"claude-code\") but canonical resolves to \"omp\"",
+      "file": "hooks/core/platform-detect.mjs",
+      "line": 41,
+      "check": "detect-single-var-divergence",
+      "severity": "error"
+    },
+    {
+      "platform": "pi",
+      "surface": "mirror",
+      "message": "env {PI_CONFIG_DIR=1} resolves to \"claude-code\" (no-arg: \"claude-code\") but canonical resolves to \"pi\"",
+      "file": "hooks/core/platform-detect.mjs",
+      "line": 41,
+      "check": "detect-single-var-divergence",
+      "severity": "error"
+    },
+    {
+      "platform": "cursor",
+      "surface": "mirror",
+      "message": "with {CURSOR_CWD=1, VSCODE_CWD=1} canonical resolves to \"cursor\" but the hook resolves to \"claude-code\"",
+      "file": "hooks/core/platform-detect.mjs",
+      "line": 41,
+      "check": "detect-collision-divergence",
+      "severity": "error"
+    },
+    {
+      "platform": "vscode-copilot",
+      "surface": "mirror",
+      "message": "with {VSCODE_CWD=1, PI_CODING_AGENT_DIR=1} canonical resolves to \"vscode-copilot\" but the hook resolves to \"claude-code\"",
+      "file": "hooks/core/platform-detect.mjs",
+      "line": 41,
+      "check": "detect-collision-divergence",
+      "severity": "error"
+    },
+    {
+      "platform": "omp",
+      "surface": "mirror",
+      "message": "with {PI_CODING_AGENT_DIR=1, PI_CONFIG_DIR=1} canonical resolves to \"omp\" but the hook resolves to \"claude-code\"",
+      "file": "hooks/core/platform-detect.mjs",
+      "line": 41,
+      "check": "detect-collision-divergence",
+      "severity": "error"
+    },
+    {
+      "platform": null,
+      "surface": "tests",
+      "message": "test asserts the fallback: tests/hooks/tool-naming.test.ts",
+      "file": "tests/hooks/tool-naming.test.ts",
+      "line": null,
+      "check": "test-enshrines-fallback",
+      "severity": "error"
+    }
+  ]
+}

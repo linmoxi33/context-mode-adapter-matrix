@@ -1,0 +1,517 @@
+#!/usr/bin/env node
+/**
+ * context-mode-adapter-matrix — offline cross-surface adapter consistency audit.
+ *
+ * Reads a checkout of mksglu/context-mode and builds a
+ * platform x surface matrix, then probes the hook modules directly to see
+ * what they actually do with a synthetic environment.
+ *
+ * No network, no third-party dependencies. Exit codes:
+ *   0 = no finding at/above the fail threshold
+ *   1 = findings at/above the fail threshold
+ *   2 = usage or input error
+ */
+const { readFileSync, readdirSync, existsSync, statSync } = require("node:fs");
+const { join, resolve } = require("node:path");
+const { pathToFileURL } = require("node:url");
+
+const VERSION = "1.0.0";
+const PROBE_TOOL = "ctx_search";
+
+const USAGE = `context-mode-adapter-matrix ${VERSION}
+
+Usage:
+  context-mode-adapter-matrix --root <checkout> [options]
+
+Options:
+  --root <dir>        Path to a mksglu/context-mode checkout (required)
+  --json              Machine-readable report on stdout
+  --platform <id>     Restrict findings/matrix to one platform (repeatable)
+  --fail-on <level>   error (default) | warning | never
+  --no-dynamic        Skip importing hooks/*.mjs and behavioural probes
+  --help              Show this help
+  --version           Show version
+
+Exit codes: 0 clean, 1 findings at/above threshold, 2 usage/input error.
+`;
+
+function fail(msg) {
+  process.stderr.write(`context-mode-adapter-matrix: ${msg}\n`);
+  process.exit(2);
+}
+
+function parseArgs(argv) {
+  const opts = { root: null, json: false, platforms: [], failOn: "error", dynamic: true, help: false, version: false };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === "--root") { opts.root = argv[++i]; if (!opts.root) fail("--root needs a value"); }
+    else if (a === "--json") opts.json = true;
+    else if (a === "--platform") { const v = argv[++i]; if (!v) fail("--platform needs a value"); opts.platforms.push(v); }
+    else if (a === "--fail-on") { const v = argv[++i]; if (!["error", "warning", "never"].includes(v)) fail(`invalid --fail-on ${v}`); opts.failOn = v; }
+    else if (a === "--no-dynamic") opts.dynamic = false;
+    else if (a === "--help" || a === "-h") opts.help = true;
+    else if (a === "--version") opts.version = true;
+    else fail(`unknown argument ${a}`);
+  }
+  return opts;
+}
+
+/* ---------- source slicing ---------- */
+
+function stripComments(src) {
+  return src.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " ")).replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+}
+
+function sliceBalanced(src, startIdx, open, close) {
+  let depth = 0, quote = null;
+  for (let i = startIdx; i < src.length; i++) {
+    const c = src[i];
+    if (quote) {
+      if (c === "\\") { i++; continue; }
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === "`") { quote = c; continue; }
+    if (c === open) depth++;
+    else if (c === close) { depth--; if (depth === 0) return src.slice(startIdx, i + 1); }
+  }
+  return null;
+}
+
+function lineAt(src, idx) {
+  let n = 1;
+  for (let i = 0; i < idx && i < src.length; i++) if (src[i] === "\n") n++;
+  return n;
+}
+
+function blockAfter(src, marker, open, close) {
+  const at = src.indexOf(marker);
+  if (at < 0) return null;
+  const eq = src.indexOf("=", at);
+  if (eq < 0) return null;
+  const openIdx = src.indexOf(open, eq);
+  if (openIdx < 0) return null;
+  const text = sliceBalanced(src, openIdx, open, close);
+  return text ? { text, line: lineAt(src, openIdx) } : null;
+}
+
+/* ---------- parsers ---------- */
+
+/** Canonical table in src/adapters/detect.ts: platform -> detection env vars. */
+function parseCanonical(src) {
+  const clean = stripComments(src);
+  const block = blockAfter(clean, "const _PLATFORM_ENV_VARS_RAW", "[", "]");
+  if (!block) return null;
+  const rows = [];
+  const entryRe = /\[\s*"([a-z0-9-]+)"\s*,\s*\[/g;
+  let m;
+  while ((m = entryRe.exec(block.text))) {
+    const innerStart = m.index + m[0].length - 1;
+    const inner = sliceBalanced(block.text, innerStart, "[", "]");
+    if (!inner) continue;
+    const vars = [];
+    const objRe = /\{([^{}]*)\}/g;
+    let o;
+    while ((o = objRe.exec(inner))) {
+      const body = o[1];
+      const nm = /name:\s*"([A-Z0-9_]+)"/.exec(body);
+      if (!nm) continue;
+      vars.push({ name: nm[1], detect: !/detect:\s*false/.test(body) });
+    }
+    rows.push({ platform: m[1], vars, line: block.line + (block.text.slice(0, m.index).match(/\n/g) || []).length });
+  }
+  return rows;
+}
+
+/** Mirror table in hooks/core/platform-detect.mjs: platform -> env var names. */
+function parseMirror(src) {
+  const clean = stripComments(src);
+  const block = blockAfter(clean, "const PLATFORM_ENV_VARS_MIRROR", "[", "]");
+  if (!block) return null;
+  const rows = [];
+  const re = /\[\s*"([a-z0-9-]+)"\s*,\s*\[([^\]]*)\]/g;
+  let m;
+  while ((m = re.exec(block.text))) {
+    const vars = [...m[2].matchAll(/"([A-Z0-9_]+)"/g)].map((x) => x[1]);
+    rows.push({ platform: m[1], vars, line: block.line + (block.text.slice(0, m.index).match(/\n/g) || []).length });
+  }
+  return rows;
+}
+
+/** Tool namer table in hooks/core/tool-naming.mjs: platform -> name template. */
+function parseNamer(src) {
+  const clean = stripComments(src);
+  const block = blockAfter(clean, "const TOOL_PREFIXES", "{", "}");
+  if (!block) return null;
+  const rows = [];
+  const re = /"([a-z0-9-]+)"\s*:\s*\(tool\)\s*=>\s*(`[^`]*`|tool)/g;
+  let m;
+  while ((m = re.exec(block.text))) {
+    const raw = m[2];
+    const template = raw === "tool" ? "{tool}" : raw.slice(1, -1);
+    rows.push({ platform: m[1], template, line: block.line + (block.text.slice(0, m.index).match(/\n/g) || []).length });
+  }
+  return rows;
+}
+
+/** clientInfo.name -> platform map. */
+function parseClientMap(src) {
+  const clean = stripComments(src);
+  const block = blockAfter(clean, "const CLIENT_NAME_TO_PLATFORM", "{", "}");
+  if (!block) return null;
+  const rows = [];
+  const re = /"([^"]+)"\s*:\s*"([a-z0-9-]+)"/g;
+  let m;
+  while ((m = re.exec(block.text))) rows.push({ client: m[1], platform: m[2] });
+  return rows;
+}
+
+/** CONTEXT_MODE_PLATFORM override allow-list. */
+function parseOverride(src) {
+  const clean = stripComments(src);
+  const at = clean.indexOf("validPlatforms");
+  if (at < 0) return null;
+  const block = blockAfter(clean, "validPlatforms", "[", "]");
+  if (!block) return null;
+  return [...block.text.matchAll(/"([a-z0-9-]+)"/g)].map((m) => m[1]);
+}
+
+function listConfigs(root) {
+  const dir = join(root, "configs");
+  if (!existsSync(dir) || !statSync(dir).isDirectory()) return null;
+  return readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory()).map((d) => d.name).sort();
+}
+
+function walk(dir, out = []) {
+  if (!existsSync(dir)) return out;
+  for (const d of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, d.name);
+    if (d.isDirectory()) walk(p, out);
+    else out.push(p);
+  }
+  return out;
+}
+
+/* ---------- checks ---------- */
+
+function finding(platform, surface, message, file, line) {
+  return { platform, surface, message, file, line: line ?? null };
+}
+
+async function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  if (opts.help) { process.stdout.write(USAGE); process.exit(0); }
+  if (opts.version) { process.stdout.write(`${VERSION}\n`); process.exit(0); }
+  if (!opts.root) fail("--root is required (see --help)");
+
+  const root = resolve(opts.root);
+  if (!existsSync(root) || !statSync(root).isDirectory()) fail(`root is not a directory: ${root}`);
+
+  const paths = {
+    detect: join(root, "src/adapters/detect.ts"),
+    mirror: join(root, "hooks/core/platform-detect.mjs"),
+    namer: join(root, "hooks/core/tool-naming.mjs"),
+    clientMap: join(root, "src/adapters/client-map.ts"),
+  };
+  for (const [k, p] of Object.entries(paths)) {
+    if (k === "clientMap") continue;
+    if (!existsSync(p)) fail(`not a context-mode checkout: missing ${p}`);
+  }
+
+  const detectSrc = readFileSync(paths.detect, "utf8");
+  const mirrorSrc = readFileSync(paths.mirror, "utf8");
+  const namerSrc = readFileSync(paths.namer, "utf8");
+  const clientMapSrc = existsSync(paths.clientMap) ? readFileSync(paths.clientMap, "utf8") : null;
+
+  const canonical = parseCanonical(detectSrc);
+  const mirror = parseMirror(mirrorSrc);
+  const namer = parseNamer(namerSrc);
+  const clientMap = clientMapSrc ? parseClientMap(clientMapSrc) : null;
+  const override = parseOverride(detectSrc);
+  const configs = listConfigs(root);
+
+  if (!canonical || canonical.length === 0) fail("could not parse _PLATFORM_ENV_VARS_RAW in src/adapters/detect.ts");
+  if (!mirror) fail("could not parse PLATFORM_ENV_VARS_MIRROR in hooks/core/platform-detect.mjs");
+  if (!namer) fail("could not parse TOOL_PREFIXES in hooks/core/tool-naming.mjs");
+
+  const canonOrder = canonical.map((r) => r.platform);
+  const canonById = new Map(canonical.map((r) => [r.platform, r]));
+  const detectVars = (p) => (canonById.get(p)?.vars || []).filter((v) => v.detect).map((v) => v.name);
+  const mirrorById = new Map(mirror.map((r) => [r.platform, r]));
+  const namerById = new Map(namer.map((r) => [r.platform, r]));
+
+  const checks = [];
+  const add = (id, severity, title, findings) => checks.push({ id, severity, title, findings });
+  const inScope = (p) => opts.platforms.length === 0 || opts.platforms.includes(p);
+  const scoped = (arr) => arr.filter((f) => inScope(f.platform));
+
+  /* canonical sanity */
+  add("canonical-table", "info", "canonical platform table parsed", []);
+  const dupVar = new Map();
+  for (const row of canonical) for (const v of row.vars) {
+    if (!v.detect) continue;
+    if (!dupVar.has(v.name)) dupVar.set(v.name, []);
+    dupVar.get(v.name).push(row.platform);
+  }
+  add("canonical-env-collision", "warning", "one env var claimed by multiple canonical platforms",
+    [...dupVar.entries()].filter(([, ps]) => ps.length > 1).map(([v, ps]) =>
+      finding(ps[0], "canonical", `${v} is claimed by ${ps.join(", ")}`, "src/adapters/detect.ts")));
+
+  /* mirror */
+  const mirrorMissing = canonical.filter((r) => detectVars(r.platform).length > 0 && !mirrorById.has(r.platform))
+    .map((r) => finding(r.platform, "mirror", `canonical platform has ${detectVars(r.platform).length} detection env var(s) but no mirror row`, "hooks/core/platform-detect.mjs", 24));
+  add("mirror-missing-platform", "error", "platform detected server-side but absent from the hook mirror", scoped(mirrorMissing));
+
+  const mirrorExtra = mirror.filter((r) => !canonById.has(r.platform))
+    .map((r) => finding(r.platform, "mirror", "mirror row has no canonical platform", "hooks/core/platform-detect.mjs", r.line));
+  add("mirror-extra-platform", "error", "mirror invents a platform the canonical table does not know", scoped(mirrorExtra));
+
+  const missVar = [], extraVar = [];
+  for (const r of mirror) {
+    const canon = canonById.get(r.platform);
+    if (!canon) continue;
+    const expected = detectVars(r.platform);
+    for (const v of expected) if (!r.vars.includes(v))
+      missVar.push(finding(r.platform, "mirror", `mirror lacks canonical detection var ${v}`, "hooks/core/platform-detect.mjs", r.line));
+    for (const v of r.vars) if (!expected.includes(v)) {
+      const declaredNoDetect = canon.vars.some((x) => x.name === v && !x.detect);
+      extraVar.push(finding(r.platform, "mirror",
+        declaredNoDetect ? `mirror uses ${v}, which canonical marks detect:false` : `mirror uses ${v}, not a canonical detection var`,
+        "hooks/core/platform-detect.mjs", r.line));
+    }
+  }
+  add("mirror-missing-env-var", "error", "mirror omits env vars the canonical table detects on", scoped(missVar));
+  add("mirror-extra-env-var", "error", "mirror detects on env vars canonical does not", scoped(extraVar));
+
+  const sharedCanon = canonOrder.filter((p) => mirrorById.has(p));
+  const sharedMirror = mirror.map((r) => r.platform).filter((p) => canonById.has(p));
+  const orderDrift = sharedCanon.length === sharedMirror.length && sharedCanon.some((p, i) => p !== sharedMirror[i])
+    ? [finding(null, "mirror", `relative order differs: canonical [${sharedCanon.join(", ")}] vs mirror [${sharedMirror.join(", ")}]`, "hooks/core/platform-detect.mjs", 24)]
+    : [];
+  add("mirror-order-drift", "warning", "mirror row order diverges from canonical precedence order", orderDrift);
+
+  /* namer */
+  add("namer-missing-platform", "error", "canonical platform has no tool-name prefix (silent claude-code fallback)",
+    scoped(canonical.filter((r) => !namerById.has(r.platform)).map((r) =>
+      finding(r.platform, "namer", "no TOOL_PREFIXES entry; getToolName() returns the claude-code name", "hooks/core/tool-naming.mjs", 19))));
+
+  add("namer-extra-platform", "warning", "tool namer knows a platform outside the canonical table",
+    scoped(namer.filter((r) => !canonById.has(r.platform)).map((r) =>
+      finding(r.platform, "namer", "prefix defined for a platform canonical detection never returns", "hooks/core/tool-naming.mjs", r.line))));
+
+  /* configs */
+  add("config-missing", "error", "canonical platform ships no configs/<platform> payload",
+    scoped(canonical.filter((r) => configs && !configs.includes(r.platform)).map((r) =>
+      finding(r.platform, "configs", "no install payload directory", "configs/"))));
+
+  add("config-orphan", "error", "configs/<platform> exists for a platform nothing else knows",
+    (configs || []).filter((p) => !canonById.has(p) && !namerById.has(p)).map((p) =>
+      finding(p, "configs", "payload directory with no canonical or namer entry", `configs/${p}`)));
+
+  /* client map */
+  if (clientMap) {
+    add("clientmap-unknown-platform", "error", "clientInfo mapping points at an unknown platform",
+      [...new Map(clientMap.filter((r) => !canonById.has(r.platform) && !namerById.has(r.platform))
+        .map((r) => [r.platform, r])).values()].map((r) =>
+        finding(r.platform, "client_map", `clientInfo "${r.client}" maps to a platform with no adapter row`, "src/adapters/client-map.ts")));
+
+    const mapped = new Set(clientMap.map((r) => r.platform));
+    add("clientmap-missing-platform", "warning", "canonical platform has no clientInfo.name mapping",
+      scoped(canonical.filter((r) => !mapped.has(r.platform)).map((r) =>
+        finding(r.platform, "client_map", "detectable only via env vars, not via MCP clientInfo.name", "src/adapters/client-map.ts"))));
+  } else {
+    add("clientmap-missing-platform", "warning", "client-map.ts not present; clientInfo surface skipped", []);
+  }
+
+  /* override allow-list */
+  if (override) {
+    add("override-list-missing", "error", "CONTEXT_MODE_PLATFORM allow-list omits a canonical platform",
+      scoped(canonical.filter((r) => !override.includes(r.platform)).map((r) =>
+        finding(r.platform, "override", "cannot be forced with CONTEXT_MODE_PLATFORM", "src/adapters/detect.ts"))));
+  } else {
+    add("override-list-missing", "warning", "validPlatforms allow-list not found; override surface skipped", []);
+  }
+
+  /* dynamic probes */
+  const dynamicFindings = { namer: [], single: [], collision: [] };
+  let dynamicRan = false;
+  if (opts.dynamic) {
+    const mirrorMod = await importModule(paths.mirror);
+    const namerMod = await importModule(paths.namer);
+    if (!mirrorMod || typeof mirrorMod.detectPlatformFromEnv !== "function") {
+      dynamicFindings.single.push(finding(null, "mirror", "detectPlatformFromEnv is not exported; behavioural probe impossible", "hooks/core/platform-detect.mjs"));
+    }
+    if (!namerMod || typeof namerMod.getToolName !== "function") {
+      dynamicFindings.namer.push(finding(null, "namer", "getToolName is not exported; behavioural probe impossible", "hooks/core/tool-naming.mjs"));
+    }
+    if (mirrorMod && typeof mirrorMod.detectPlatformFromEnv === "function") {
+      dynamicRan = true;
+      const probe = (env) => withEnv(env, () => {
+        const a = mirrorMod.detectPlatformFromEnv({ ...env });
+        const b = mirrorMod.detectPlatformFromEnv();
+        return [a, b];
+      });
+
+      for (const row of canonical) {
+        const vars = detectVars(row.platform);
+        if (vars.length === 0) continue;
+        const env = { [vars[0]]: "1" };
+        const expected = canonicalMatch(canonical, env);
+        const [a, b] = probe(env);
+        if (a !== expected || b !== expected)
+          dynamicFindings.single.push(finding(row.platform, "mirror",
+            `env {${vars[0]}=1} resolves to "${a}" (no-arg: "${b}") but canonical resolves to "${expected}"`,
+            "hooks/core/platform-detect.mjs", 41));
+      }
+
+      const firstVar = (p) => detectVars(p)[0];
+      const seen = new Set();
+      for (let i = 0; i < canonical.length; i++) {
+        for (let j = i + 1; j < canonical.length; j++) {
+          const p = canonical[i].platform, q = canonical[j].platform;
+          const vp = firstVar(p), vq = firstVar(q);
+          if (!vp || !vq || vp === vq) continue;
+          const env = { [vp]: "1", [vq]: "1" };
+          const expected = canonicalMatch(canonical, env);
+          const [a] = probe(env);
+          if (a === expected) continue;
+          const key = `${expected}->${a}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          dynamicFindings.collision.push(finding(expected, "mirror",
+            `with {${vp}=1, ${vq}=1} canonical resolves to "${expected}" but the hook resolves to "${a}"`,
+            "hooks/core/platform-detect.mjs", 41));
+        }
+      }
+    }
+    if (namerMod && typeof namerMod.getToolName === "function") {
+      const ccName = safeCall(() => namerMod.getToolName("claude-code", PROBE_TOOL));
+      for (const row of canonical) {
+        if (row.platform === "claude-code") continue;
+        const got = safeCall(() => namerMod.getToolName(row.platform, PROBE_TOOL));
+        if (got !== undefined && ccName !== undefined && got === ccName)
+          dynamicFindings.namer.push(finding(row.platform, "namer",
+            `getToolName("${row.platform}") returns the claude-code name (${got})`, "hooks/core/tool-naming.mjs", 44));
+      }
+    }
+  }
+  add("namer-silent-fallback", "error", "tool name silently falls back to the claude-code convention", scoped(dynamicFindings.namer));
+  add("detect-single-var-divergence", "error", "hook resolves a canonical env var to a different platform", scoped(dynamicFindings.single));
+  add("detect-collision-divergence", "error", "two canonical env vars collide differently on the hook side", scoped(dynamicFindings.collision));
+
+  /* tests that lock the fallback in place */
+  const testFiles = walk(join(root, "tests")).filter((f) => /\.(ts|mjs|js)$/.test(f));
+  const enshrined = [];
+  for (const f of testFiles) {
+    const src = readFileSync(f, "utf8");
+    if (/falls back to claude-code for unknown platforms/i.test(src))
+      enshrined.push(finding(null, "tests", `test asserts the fallback: ${f.slice(root.length + 1)}`, f.slice(root.length + 1)));
+  }
+  const fallbackHits = dynamicFindings.namer.length > 0;
+  add("test-enshrines-fallback", "error", "test suite asserts the silent fallback instead of blocking it",
+    fallbackHits ? enshrined : []);
+
+  /* matrix */
+  const universe = [...canonOrder];
+  for (const p of [...mirror.map((r) => r.platform), ...namer.map((r) => r.platform), ...(configs || []), ...(clientMap || []).map((r) => r.platform), ...(override || [])])
+    if (!universe.includes(p)) universe.push(p);
+  const matrix = universe.map((p) => {
+    const canon = canonById.has(p);
+    const mir = mirrorById.has(p);
+    const nam = namerById.has(p);
+    const namerFallsBack = fallbackHits && canon && !nam;
+    return {
+      platform: p,
+      canonical: canon ? "present" : "extra",
+      mirror: mir ? "present" : canon && detectVars(p).length ? "missing" : "n/a",
+      namer: namerFallsBack ? "silent-fallback" : nam ? "present" : canon ? "missing" : "n/a",
+      configs: configs ? (configs.includes(p) ? "present" : canon ? "missing" : "n/a") : "n/a",
+      client_map: clientMap ? (clientMap.some((r) => r.platform === p) ? "present" : canon ? "missing" : "n/a") : "n/a",
+      override: override ? (override.includes(p) ? "present" : canon ? "missing" : "n/a") : "n/a",
+    };
+  }).filter((r) => inScope(r.platform));
+
+  const allFindings = checks.flatMap((c) => c.findings.map((f) => ({ ...f, check: c.id, severity: c.severity })));
+  const errors = checks.filter((c) => c.severity === "error").reduce((n, c) => n + c.findings.length, 0);
+  const warnings = checks.filter((c) => c.severity === "warning").reduce((n, c) => n + c.findings.length, 0);
+  const report = {
+    tool: "context-mode-adapter-matrix",
+    version: VERSION,
+    root,
+    summary: {
+      platforms: canonical.length,
+      surfaces: 6,
+      checks: checks.length,
+      errors,
+      warnings,
+      dynamic_probes: dynamicRan,
+    },
+    matrix,
+    checks: checks.map((c) => ({ ...c, findings: c.findings })),
+    findings: allFindings,
+  };
+
+  const failed = opts.failOn === "never" ? false
+    : opts.failOn === "warning" ? errors + warnings > 0
+    : errors > 0;
+
+  if (opts.json) {
+    process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+  } else {
+    process.stdout.write(renderHuman(report, opts) + "\n");
+  }
+  process.exit(failed ? 1 : 0);
+}
+
+function canonicalMatch(canonical, env) {
+  for (const row of canonical) {
+    for (const v of row.vars) if (v.detect && env[v.name]) return row.platform;
+  }
+  return "claude-code";
+}
+
+function withEnv(env, fn) {
+  const saved = new Map();
+  for (const k of Object.keys(env)) { saved.set(k, process.env[k]); process.env[k] = env[k]; }
+  try { return fn(); } finally {
+    for (const [k, v] of saved) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+}
+
+function safeCall(fn) {
+  try { return fn(); } catch { return undefined; }
+}
+
+async function importModule(path) {
+  try { return await import(pathToFileURL(path).href); } catch { return null; }
+}
+
+function renderHuman(report, opts) {
+  const out = [];
+  out.push(`context-mode-adapter-matrix ${report.version}`);
+  out.push(`root: ${report.root}`);
+  out.push(`platforms: ${report.summary.platforms} canonical | checks: ${report.summary.checks} | errors: ${report.summary.errors} | warnings: ${report.summary.warnings} | dynamic: ${report.summary.dynamic_probes}`);
+  out.push("");
+  const cols = ["platform", "canonical", "mirror", "namer", "configs", "client_map", "override"];
+  const rows = report.matrix.map((r) => [r.platform, r.canonical, r.mirror, r.namer, r.configs, r.client_map, r.override]);
+  const widths = cols.map((c, i) => Math.max(c.length, ...rows.map((r) => String(r[i]).length)));
+  out.push(cols.map((c, i) => c.padEnd(widths[i])).join("  "));
+  out.push(widths.map((w) => "-".repeat(w)).join("  "));
+  for (const r of rows) out.push(r.map((v, i) => String(v).padEnd(widths[i])).join("  "));
+  out.push("");
+  for (const c of report.checks) {
+    if (c.findings.length === 0) continue;
+    out.push(`[${c.severity}] ${c.id}: ${c.findings.length} — ${c.title}`);
+    for (const f of c.findings) {
+      const where = f.file ? ` (${f.file}${f.line ? ":" + f.line : ""})` : "";
+      out.push(`  - ${f.platform ? f.platform + ": " : ""}${f.message}${where}`);
+    }
+  }
+  const clean = report.checks.filter((c) => c.findings.length === 0).map((c) => c.id);
+  if (clean.length) out.push(`clean checks: ${clean.join(", ")}`);
+  out.push("");
+  out.push(`RESULT: ${report.summary.errors} error(s), ${report.summary.warnings} warning(s) — fail-on=${opts.failOn}`);
+  return out.join("\n");
+}
+
+main().catch((e) => fail(e && e.stack ? e.stack : String(e)));

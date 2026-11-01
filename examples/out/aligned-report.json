@@ -1,0 +1,153 @@
+{
+  "tool": "context-mode-adapter-matrix",
+  "version": "1.0.0",
+  "root": "/home/ubuntu/GitHub/work/trending/context-mode-adapter-matrix/examples/in/aligned",
+  "summary": {
+    "platforms": 3,
+    "surfaces": 6,
+    "checks": 18,
+    "errors": 0,
+    "warnings": 0,
+    "dynamic_probes": true
+  },
+  "matrix": [
+    {
+      "platform": "claude-code",
+      "canonical": "present",
+      "mirror": "present",
+      "namer": "present",
+      "configs": "present",
+      "client_map": "present",
+      "override": "present"
+    },
+    {
+      "platform": "alpha",
+      "canonical": "present",
+      "mirror": "present",
+      "namer": "present",
+      "configs": "present",
+      "client_map": "present",
+      "override": "present"
+    },
+    {
+      "platform": "beta",
+      "canonical": "present",
+      "mirror": "present",
+      "namer": "present",
+      "configs": "present",
+      "client_map": "present",
+      "override": "present"
+    }
+  ],
+  "checks": [
+    {
+      "id": "canonical-table",
+      "severity": "info",
+      "title": "canonical platform table parsed",
+      "findings": []
+    },
+    {
+      "id": "canonical-env-collision",
+      "severity": "warning",
+      "title": "one env var claimed by multiple canonical platforms",
+      "findings": []
+    },
+    {
+      "id": "mirror-missing-platform",
+      "severity": "error",
+      "title": "platform detected server-side but absent from the hook mirror",
+      "findings": []
+    },
+    {
+      "id": "mirror-extra-platform",
+      "severity": "error",
+      "title": "mirror invents a platform the canonical table does not know",
+      "findings": []
+    },
+    {
+      "id": "mirror-missing-env-var",
+      "severity": "error",
+      "title": "mirror omits env vars the canonical table detects on",
+      "findings": []
+    },
+    {
+      "id": "mirror-extra-env-var",
+      "severity": "error",
+      "title": "mirror detects on env vars canonical does not",
+      "findings": []
+    },
+    {
+      "id": "mirror-order-drift",
+      "severity": "warning",
+      "title": "mirror row order diverges from canonical precedence order",
+      "findings": []
+    },
+    {
+      "id": "namer-missing-platform",
+      "severity": "error",
+      "title": "canonical platform has no tool-name prefix (silent claude-code fallback)",
+      "findings": []
+    },
+    {
+      "id": "namer-extra-platform",
+      "severity": "warning",
+      "title": "tool namer knows a platform outside the canonical table",
+      "findings": []
+    },
+    {
+      "id": "config-missing",
+      "severity": "error",
+      "title": "canonical platform ships no configs/<platform> payload",
+      "findings": []
+    },
+    {
+      "id": "config-orphan",
+      "severity": "error",
+      "title": "configs/<platform> exists for a platform nothing else knows",
+      "findings": []
+    },
+    {
+      "id": "clientmap-unknown-platform",
+      "severity": "error",
+      "title": "clientInfo mapping points at an unknown platform",
+      "findings": []
+    },
+    {
+      "id": "clientmap-missing-platform",
+      "severity": "warning",
+      "title": "canonical platform has no clientInfo.name mapping",
+      "findings": []
+    },
+    {
+      "id": "override-list-missing",
+      "severity": "error",
+      "title": "CONTEXT_MODE_PLATFORM allow-list omits a canonical platform",
+      "findings": []
+    },
+    {
+      "id": "namer-silent-fallback",
+      "severity": "error",
+      "title": "tool name silently falls back to the claude-code convention",
+      "findings": []
+    },
+    {
+      "id": "detect-single-var-divergence",
+      "severity": "error",
+      "title": "hook resolves a canonical env var to a different platform",
+      "findings": []
+    },
+    {
+      "id": "detect-collision-divergence",
+      "severity": "error",
+      "title": "two canonical env vars collide differently on the hook side",
+      "findings": []
+    },
+    {
+      "id": "test-enshrines-fallback",
+      "severity": "error",
+      "title": "test suite asserts the silent fallback instead of blocking it",
+      "findings": []
+    }
+  ],
+  "findings": []
+}
