@@ -1,0 +1,14 @@
+name: audit
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: unit + behavioural tests
+        run: node tests/run.mjs
+      - name: aligned fixture must pass the gate
+        run: node bin/context-mode-adapter-matrix --root examples/in/aligned

@@ -113,6 +113,7 @@ node tests/run.mjs     # 16/16 passed
 ```
 
 16 cases, 9 behavioural (spawn the CLI and assert exit code / parsed JSON / matrix rows).
+`.github/workflows/audit.yml` runs the same suite plus the aligned fixture on every push.
 `examples/in/aligned` is a fixture where every surface agrees → exit 0;
 `examples/in/upstream` reproduces the omp drift → exit 1 with 18 errors.
 
