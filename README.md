@@ -31,9 +31,12 @@ tree): **13 canonical platforms, 48 errors, 6 warnings across 18 checks**. Highl
 
 - `omp` is detected server-side but resolves to `claude-code` in the hook (proved by
   importing the real module, not by reading it).
-- `CLAUDE_CODE_ENTRYPOINT` is missing from the mirror, so Claude Code inside a VS Code
-  terminal resolves to `vscode-copilot` on the hook side — the exact disambiguation the
-  canonical table documents.
+- `CLAUDE_CODE_ENTRYPOINT` is missing from the mirror, so when it is the only Claude Code
+  marker present alongside `VSCODE_PID` (MCP-server-only boots, before
+  `CLAUDE_PROJECT_DIR`/`CLAUDE_SESSION_ID` propagate) the hook resolves to
+  `vscode-copilot` while the canonical table resolves to `claude-code` — the exact
+  disambiguation the canonical table documents. Adding either of the other two markers
+  masks it, so this one is conditional, not universal.
 - `PI_PROJECT_DIR` is `detect: false` in the canonical table but is the *only* Pi var the
   mirror checks, so a consumer-set var can misclassify the host as Pi.
 
@@ -96,7 +99,7 @@ node bin/context-mode-adapter-matrix --root /tmp/context-mode --json > report.js
 python3 -c "import json;d=json.load(open('report.json'));print(d['summary'])"
 ```
 
-`--json` example (truncated, full file in `examples/out/drifted-report.json`):
+`--json` example (truncated; the full 13-platform/48-error file is `examples/out/upstream-a35dd45-report.json`):
 
 ```json
 {"summary":{"platforms":13,"surfaces":6,"checks":18,"errors":48,"warnings":6,"dynamic_probes":true},

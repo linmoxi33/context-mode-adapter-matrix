@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Zero-dependency test runner: 15 cases, 9 of them behavioural (spawn -> exit code/stdout).
+// Zero-dependency test runner: 16 cases, 9 of them behavioural (spawn -> exit code/stdout).
 import { spawnSync } from "node:child_process";
 import { cpSync, mkdtempSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
