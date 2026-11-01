@@ -1,7 +1,7 @@
 {
   "tool": "context-mode-adapter-matrix",
   "version": "1.0.0",
-  "root": "/home/ubuntu/GitHub/work/trending/context-mode-adapter-matrix/examples/in/upstream",
+  "root": "examples/in/upstream",
   "summary": {
     "platforms": 5,
     "surfaces": 6,

@@ -437,7 +437,7 @@ async function main() {
   const report = {
     tool: "context-mode-adapter-matrix",
     version: VERSION,
-    root,
+    root: opts.root,
     summary: {
       platforms: canonical.length,
       surfaces: 6,
