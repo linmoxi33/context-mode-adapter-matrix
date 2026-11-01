@@ -22,8 +22,10 @@ context-mode routes MCP tools across 17+ coding agents. Two files have to agree:
 - The canonical table added `omp` ([detect.ts#L223](https://github.com/mksglu/context-mode/blob/a35dd45f3976b4a22baa0032db2b3c050c00a163/src/adapters/detect.ts#L223))
   and `configs/omp/` ships an install payload — but the mirror has no `omp` row, and the
   namer has no `omp` prefix. The suite even asserts the fallback is fine
-  ([tool-naming.test.ts#L139](https://github.com/mksglu/context-mode/blob/a35dd45f3976b4a22baa0032db2b3c050c00a163/tests/hooks/tool-naming.test.ts#L139)),
-  so CI cannot see the drift.
+  ([tool-naming.test.ts#L139](https://github.com/mksglu/context-mode/blob/a35dd45f3976b4a22baa0032db2b3c050c00a163/tests/hooks/tool-naming.test.ts#L139)).
+  That test is generic rather than omp-specific, but it is the only test of the fallback
+  path and it expects the claude-code name — so a platform that loses its prefix cannot
+  make the suite fail.
 
 Upstream's issue tracker is disabled (`has_issues: false`), so this drift has no public
 report and no CI gate. Measured against upstream `a35dd45` (files fetched with `gh api`, configs from the git
@@ -135,6 +137,6 @@ node tests/run.mjs     # 16/16 passed
 
 首次把「平台 × 表面」矩阵与**逐对 env 碰撞差分**合到一条审计里：不只比对两张表是否
 同文，而是把 hook 模块真跑起来，用 N² 组双变量环境证明 server 侧与 hook 侧对同一环境
-给出不同平台（本轮在 `a35dd45` 上测出 29 组碰撞分歧），并指出测试套件把静默回落当成
+给出不同平台（本轮在 `a35dd45` 上测出 29 种碰撞签名，对应 78 对组合中的 35 对真实分歧），并指出测试套件把静默回落当成
 正确行为，使 CI 永远看不见这类漂移。台账中此前的校验器都只做单文件静态规则，没有
 跨实现的行为差分，因此不是换皮。
