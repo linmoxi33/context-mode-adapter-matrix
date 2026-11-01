@@ -67,12 +67,26 @@ gh search code "detectPlatformFromEnv" --limit=20                     # 上游 +
 
 ## 3. Install / usage
 
-Requires Node ≥ 18. No dependencies, no build step.
+Requires Node ≥ 18. No dependencies, no build step. First command works offline:
+
+```bash
+git clone --depth=1 https://github.com/linmoxi33/context-mode-adapter-matrix
+cd context-mode-adapter-matrix
+node bin/context-mode-adapter-matrix --root examples/in/upstream   # exit 1, 18 errors
+node bin/context-mode-adapter-matrix --root examples/in/aligned    # exit 0
+```
+
+To audit a real checkout, point `--root` at one:
 
 ```bash
 git clone --depth=1 https://github.com/mksglu/context-mode /tmp/context-mode
 node bin/context-mode-adapter-matrix --root /tmp/context-mode
 ```
+
+(Where `github.com:443` is blocked, fetch the five files with `gh api
+repos/mksglu/context-mode/contents/<path> --jq .content | base64 -d` and `mkdir` the
+`configs/<name>` directories from `gh api repos/mksglu/context-mode/contents/configs`;
+`examples/out/upstream-a35dd45-report.json` was produced exactly that way.)
 
 Options: `--json`, `--platform <id>` (repeatable), `--fail-on error|warning|never`,
 `--no-dynamic` (static surfaces only), `--help`, `--version`.
