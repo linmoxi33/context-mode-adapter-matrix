@@ -305,15 +305,15 @@ async function main() {
       finding(r.platform, "configs", "no install payload directory", "configs/"))));
 
   add("config-orphan", "error", "configs/<platform> exists for a platform nothing else knows",
-    (configs || []).filter((p) => !canonById.has(p) && !namerById.has(p)).map((p) =>
-      finding(p, "configs", "payload directory with no canonical or namer entry", `configs/${p}`)));
+    scoped((configs || []).filter((p) => !canonById.has(p) && !namerById.has(p)).map((p) =>
+      finding(p, "configs", "payload directory with no canonical or namer entry", `configs/${p}`))));
 
   /* client map */
   if (clientMap) {
     add("clientmap-unknown-platform", "error", "clientInfo mapping points at an unknown platform",
-      [...new Map(clientMap.filter((r) => !canonById.has(r.platform) && !namerById.has(r.platform))
+      scoped([...new Map(clientMap.filter((r) => !canonById.has(r.platform) && !namerById.has(r.platform))
         .map((r) => [r.platform, r])).values()].map((r) =>
-        finding(r.platform, "client_map", `clientInfo "${r.client}" maps to a platform with no adapter row`, "src/adapters/client-map.ts")));
+        finding(r.platform, "client_map", `clientInfo "${r.client}" maps to a platform with no adapter row`, "src/adapters/client-map.ts"))));
 
     const mapped = new Set(clientMap.map((r) => r.platform));
     add("clientmap-missing-platform", "warning", "canonical platform has no clientInfo.name mapping",
