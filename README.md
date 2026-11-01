@@ -25,7 +25,8 @@ context-mode routes MCP tools across 17+ coding agents. Two files have to agree:
   ([tool-naming.test.ts#L139](https://github.com/mksglu/context-mode/blob/a35dd45f3976b4a22baa0032db2b3c050c00a163/tests/hooks/tool-naming.test.ts#L139)),
   so CI cannot see the drift.
 
-Measured against upstream `a35dd45` (files fetched with `gh api`, configs from the git
+Upstream's issue tracker is disabled (`has_issues: false`), so this drift has no public
+report and no CI gate. Measured against upstream `a35dd45` (files fetched with `gh api`, configs from the git
 tree): **13 canonical platforms, 48 errors, 6 warnings across 18 checks**. Highlights:
 
 - `omp` is detected server-side but resolves to `claude-code` in the hook (proved by
@@ -46,6 +47,23 @@ canonical table. Also flags a test suite that asserts the silent fallback.
 
 Does not: modify the checkout, call the network, run the MCP server, or claim to fix
 upstream. It reports; exit code 1 is the CI gate.
+
+## 2b. 与同类项目的差异
+
+写代码前实际执行过（2026-11-01）：
+
+```bash
+gh search repos "mcp adapter platform consistency lint" --limit=20   # 0 命中
+gh search repos "context-mode" --limit=20                             # 只有上游本身 + 无关同名项目
+gh search code "PLATFORM_ENV_VARS_MIRROR" --limit=20                  # 8 个命中，全是上游 fork
+gh search code "detectPlatformFromEnv" --limit=20                     # 上游 + fork，无独立工具
+```
+
+命中的 8 个仓库都是 context-mode 的 fork（`cv-superding/hypercontext-mode`、
+`som1shi/pi-config`、`russellcainiv/claude-plugins` 等），不是审计器；没有找到独立做
+跨表面一致性检查的项目。上游的 issue 跟踪器本身是关闭的
+（`gh api repos/mksglu/context-mode --jq .has_issues` → `false`），所以这类漂移既没有
+现成工具拦，也没有公开渠道报。
 
 ## 3. Install / usage
 
